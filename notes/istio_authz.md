@@ -65,8 +65,10 @@ spec:
    rules[0] ignored, found HTTP only rule for a TCP service: methods([*]) not supported
    ```
 1. With logging for rbac of istio-proxy turned on to `debug` level, we can see the request detail.
-   - some headers are available, e.g. 'x-goog-authenticated-user-email', 'accounts.google.com:abc@gmail.com'
+   - some headers are available, e.g. `'x-goog-authenticated-user-email', 'accounts.google.com:abc@gmail.com'`
    - however, no request.auth.XX [properties](https://istio.io/docs/reference/config/authorization/constraints-and-properties/#properties)
 1. If we apply a same JWT validation policy on this service, then request.auth.X are available.
-   `request.auth.claims[email]=abc@gmail.com
+   `request.auth.claims[email]=abc@gmail.com`
+1. When not authorized, we will see `upstream connect error or disconnect/reset before headers` if it's a TCP service. Confusing.
+
 
