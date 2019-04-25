@@ -1,0 +1,114 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: mnist
+  name: mnist-v1
+  namespace: kubeflow
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+      labels:
+        app: mnist
+        version: v1
+    spec:
+      containers:
+      - args:
+        - --port=9000
+        - --rest_api_port=8500
+        - --model_name=mnist
+        - --model_base_path=gs://kubeflow-examples-data/mnist
+        command:
+        - /usr/bin/tensorflow_model_server
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /secret/gcp-credentials/user-gcp-sa.json
+        image: tensorflow/serving:1.13.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          tcpSocket:
+            port: 9000
+        name: mnist
+        ports:
+        - containerPort: 9000
+        - containerPort: 8500
+        resources:
+          limits:
+            cpu: "4"
+            memory: 4Gi
+          requests:
+            cpu: "1"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /secret/gcp-credentials
+          name: gcp-credentials
+      volumes:
+      - name: gcp-credentials
+        secret:
+          secretName: user-gcp-sa
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: mnist
+    ksonnet.io/component: mnist-service
+  name: mnist-service
+  namespace: kubeflow
+spec:
+  ports:
+  - name: grpc-tf-serving
+    port: 9000
+    targetPort: 9000
+  - name: http-tf-serving
+    port: 8500
+    targetPort: 8500
+  selector:
+    app: mnist
+  type: ClusterIP
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  labels:
+    ksonnet.io/component: mnist-service
+  name: mnist-service
+  namespace: kubeflow
+spec:
+  host: mnist-service
+  subsets:
+  - labels:
+      version: v1
+    name: v1
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  labels:
+    ksonnet.io/component: mnist-service
+  name: mnist-service
+  namespace: kubeflow
+spec:
+  gateways:
+  - kubeflow-gateway
+  hosts:
+  - '*'
+  http:
+  - match:
+    - method:
+        exact: POST
+      uri:
+        prefix: /tfserving/models/mnist
+    rewrite:
+      uri: /v1/models/mnist:predict
+    route:
+    - destination:
+        host: mnist-service
+        port:
+          number: 8500
+        subset: v1
+      weight: 100
